@@ -1,0 +1,141 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --color-canvas: #f8f9ff;
+  --color-surface: #ffffff;
+  --color-ink: #121c2a;
+  --color-muted: #607089;
+  --color-line: #e6ebf4;
+  --color-primary: #006458;
+  --color-primary-strong: #004d43;
+  --color-primary-soft: #e7f4f0;
+  --color-navy: #14284b;
+  --color-soft: #eef4ff;
+  --color-soft-strong: #e1ebff;
+  --color-warning: #a05b00;
+  --color-warning-soft: #fff5da;
+  --color-danger: #b42318;
+  --color-danger-soft: #fff0ef;
+  --color-success: #067647;
+  --color-success-soft: #eaf7f0;
+}
+
+* {
+  border-color: var(--color-line);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background:
+    radial-gradient(1100px 500px at 82% -10%, rgba(225, 235, 255, 0.55), transparent 62%),
+    var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: #cfe8e2;
+  color: #083b34;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+@keyframes waveform {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.wave-bar {
+  transform-origin: center;
+  animation: waveform 900ms ease-in-out infinite;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 260ms ease-out both;
+}
+
+@keyframes soft-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(0, 100, 88, 0.28);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(0, 100, 88, 0);
+  }
+}
+
+.speaking-pulse {
+  animation: soft-pulse 1.4s ease-in-out infinite;
+}
+
+.card-shadow {
+  box-shadow:
+    0 1px 2px rgba(20, 40, 75, 0.04),
+    0 12px 32px -20px rgba(20, 40, 75, 0.18);
+}
+
+.thin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd6e8 transparent;
+}
+
+.thin-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd6e8;
+  border-radius: 999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

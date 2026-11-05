@@ -1,1 +1,15 @@
 *.pdf
+node_modules/
+.next/
+out/
+build/
+coverage/
+.env
+.env.local
+.env.*.local
+!.env.example
+.DS_Store
+*.tsbuildinfo
+next-env.d.ts
+
+.Ge-design/*
