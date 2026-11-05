@@ -17,6 +17,8 @@ export interface WritingCriterion {
   comment: string;
 }
 
+export type WritingReviewProvider = "gemini" | "local";
+
 export interface WritingReview {
   score: number;
   summary: string;
@@ -26,6 +28,10 @@ export interface WritingReview {
   model: string;
   promptVersion: string;
   createdAt: string;
+  /** Có thể vắng mặt ở bản ghi cũ trong localStorage. */
+  provider?: WritingReviewProvider;
+  /** true khi kết quả đến từ bộ quy tắc cục bộ. */
+  isDemo?: boolean;
 }
 
 type VerbMap = Record<string, Record<string, string>>;
@@ -128,11 +134,19 @@ function detectNounCapitalization(text: string): WritingError[] {
   return errors;
 }
 
+function containsTargetPart(text: string, part: string) {
+  if (new RegExp(`\\b${escapeRegExp(part)}\\b`, "u").test(text)) return true;
+
+  // A1 thường dùng động từ đã chia, ví dụ "heiße" thay vì "heißen".
+  const stem = part.replace(/(en|n|e)$/u, "");
+  return stem.length >= 3 && new RegExp(`\\b${escapeRegExp(stem)}`, "u").test(text);
+}
+
 function missingTargetWords(text: string, prompt: WritingPrompt) {
   const normalized = text.toLocaleLowerCase("de-DE");
   return prompt.targetVocabulary.filter((word) => {
-    const root = word.split(" ")[0].toLocaleLowerCase("de-DE");
-    return !normalized.includes(root);
+    const parts = word.toLocaleLowerCase("de-DE").split(/\s+/).filter(Boolean);
+    return !parts.every((part) => containsTargetPart(normalized, part));
   });
 }
 
@@ -157,6 +171,8 @@ export function runLocalWritingReview(prompt: WritingPrompt, original: string): 
       model: "local-demo-v1",
       promptVersion: "writing-v1",
       createdAt: new Date().toISOString(),
+      provider: "local",
+      isDemo: true,
     };
   }
 
@@ -254,5 +270,7 @@ export function runLocalWritingReview(prompt: WritingPrompt, original: string): 
     model: "local-demo-v1",
     promptVersion: "writing-v1",
     createdAt: new Date().toISOString(),
+    provider: "local",
+    isDemo: true,
   };
 }

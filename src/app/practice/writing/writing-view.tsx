@@ -42,16 +42,22 @@ const errorTypeLabels = {
   task: "Đề bài",
 };
 
-export function WritingView() {
+interface WritingViewProps {
+  aiConfigured: boolean;
+  aiModel: string;
+}
+
+export function WritingView({ aiConfigured, aiModel }: WritingViewProps) {
   const [type, setType] = useState<"sentence" | "paragraph">("sentence");
   const [text, setText] = useState("");
   const [review, setReview] = useState<WritingReview | null>(null);
   const [reviewedText, setReviewedText] = useState("");
   const [reviewing, setReviewing] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
   const [showOriginal, setShowOriginal] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reviewRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  const submittingRef = useRef(false);
   const { data, hydrated, saveWritingDraft, saveWritingReview } = useProgress();
   const { notify } = useToast();
 
@@ -59,6 +65,7 @@ export function WritingView() {
   const words = wordCount(text);
   const savedReview = data.writingRecords[prompt.id];
   const changedSinceReview = Boolean(review && text !== reviewedText);
+  const reviewIsDemo = review ? (review.isDemo ?? review.model === "local-demo-v1") : false;
 
   useEffect(() => {
     if (!hydrated) return;
@@ -71,35 +78,91 @@ export function WritingView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prompt.id, hydrated]);
 
-  useEffect(() => {
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, []);
-
   const changeType = (next: "sentence" | "paragraph") => {
     setType(next);
     setReviewing(false);
+    setReviewError(null);
   };
 
   const changeText = (value: string) => {
     setText(value);
+    setReviewError(null);
     saveWritingDraft(prompt.id, value);
   };
 
-  const submit = () => {
-    if (!text.trim() || reviewing) return;
+  const submit = async () => {
+    if (!text.trim() || reviewing || submittingRef.current) return;
+
+    submittingRef.current = true;
+    const currentPrompt = prompt;
+    const currentText = text.trim();
     setReviewing(true);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      const result = runLocalWritingReview(prompt, text);
+    setReviewError(null);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 35_000);
+
+    try {
+      const response = await fetch("/api/writing/review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ promptId: currentPrompt.id, text: currentText }),
+        signal: controller.signal,
+      });
+
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            review?: WritingReview;
+            fallback?: boolean;
+            notice?: string;
+            error?: string;
+            retryAfter?: number;
+          }
+        | null;
+
+      if (!response.ok) {
+        const message =
+          payload?.error ??
+          (response.status === 429
+            ? "Bạn đã chấm quá nhiều bài. Vui lòng thử lại sau."
+            : "Không chấm được bài viết. Bản nháp của bạn vẫn được giữ.");
+        setReviewError(message);
+        notify(message);
+        return;
+      }
+
+      const result = payload?.review;
+      if (!result || typeof result.score !== "number" || !Array.isArray(result.criteria)) {
+        throw new Error("Phản hồi chấm bài không hợp lệ.");
+      }
+
       setReview(result);
-      setReviewedText(text);
-      saveWritingReview(prompt.id, text, result, prompt.title);
-      setReviewing(false);
-      notify(`Đã chấm bài viết: ${result.score}/10 (bản demo cục bộ).`);
+      setReviewedText(currentText);
+      saveWritingReview(currentPrompt.id, currentText, result, currentPrompt.title);
+
+      if (payload?.fallback) {
+        notify(payload.notice ?? `Đã chấm bằng bộ quy tắc cục bộ: ${result.score}/10.`);
+      } else {
+        notify(`Đã chấm bằng ${result.model}: ${result.score}/10.`);
+      }
       setTimeout(() => reviewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
-    }, 700);
+    } catch (error) {
+      // Mất mạng hoặc route handler lỗi: vẫn giữ bản nháp và chấm cục bộ để không chặn việc học.
+      const local = runLocalWritingReview(currentPrompt, currentText);
+      setReview(local);
+      setReviewedText(currentText);
+      saveWritingReview(currentPrompt.id, currentText, local, currentPrompt.title);
+      const message =
+        error instanceof Error && error.name === "AbortError"
+          ? "Gemini phản hồi quá lâu. Đã chấm bằng bộ quy tắc cục bộ; bài viết vẫn được giữ."
+          : "Không kết nối được máy chủ AI. Đã chấm bằng bộ quy tắc cục bộ; bài viết vẫn được giữ.";
+      setReviewError(message);
+      notify(message);
+    } finally {
+      clearTimeout(timeout);
+      submittingRef.current = false;
+      setReviewing(false);
+    }
   };
 
   const useSuggestion = () => {
@@ -136,9 +199,9 @@ export function WritingView() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone="soft">A1 · Lektion 1</Badge>
-          <Badge tone="warning">
+          <Badge tone={aiConfigured ? "success" : "warning"}>
             <Sparkles className="h-3 w-3" aria-hidden="true" />
-            Chấm demo cục bộ
+            {aiConfigured ? `Gemini · ${aiModel}` : "Chấm demo cục bộ"}
           </Badge>
         </div>
       </div>
@@ -272,11 +335,20 @@ export function WritingView() {
                     Có thay đổi chưa chấm
                   </Badge>
                 ) : null}
-                <p className="ml-auto inline-flex items-center gap-1.5 text-[10px] text-muted">
-                  <Info className="h-3.5 w-3.5" aria-hidden="true" />
-                  Bản demo chấm bằng quy tắc cục bộ, chưa gọi Gemini.
+                <p className="ml-auto inline-flex max-w-xs items-center gap-1.5 text-[10px] text-muted">
+                  <Info className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  {aiConfigured
+                    ? `Khi bấm chấm, bài viết và đề được gửi tới Google Gemini (${aiModel}).`
+                    : "Chưa cấu hình Gemini; bài được chấm bằng quy tắc cục bộ trên máy chủ."}
                 </p>
               </div>
+
+              {reviewError ? (
+                <div className="mt-3 flex items-start gap-2 rounded-xl border border-[#f6c9c3] bg-danger-soft p-3">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" aria-hidden="true" />
+                  <p className="text-[11px] leading-5 text-danger">{reviewError}</p>
+                </div>
+              ) : null}
 
               {reviewing ? (
                 <div className="mt-3 rounded-xl border border-[#d6e3ff] bg-soft p-3">
@@ -320,7 +392,9 @@ export function WritingView() {
                         <Clock className="h-3 w-3" aria-hidden="true" />
                         {formatRelativeTime(review.createdAt)}
                       </Badge>
-                      <Badge tone="warning">{review.model}</Badge>
+                      <Badge tone={reviewIsDemo ? "warning" : "soft"}>
+                        {reviewIsDemo ? "Local demo" : review.model}
+                      </Badge>
                     </div>
                     <h2 className="mt-2 text-[18px] font-bold text-navy">Kết quả bài viết</h2>
                     <p className="mt-1 text-[12px] leading-6 text-[#3f4d63]">{review.summary}</p>
@@ -423,8 +497,10 @@ export function WritingView() {
                   <p className="text-[11px] font-bold text-[#7c5100]">Lưu ý về điểm số</p>
                   <p className="mt-1 text-[11px] leading-5 text-[#7c5100]">
                     Điểm 0–10 chỉ là gợi ý nội bộ, không đại diện kết quả kỳ thi hay đánh giá CEFR chính thức.
-                    Bản demo dùng bộ quy tắc cục bộ nên có thể bỏ sót lỗi; khi kết nối Gemini, backend sẽ kiểm tra
-                    cấu trúc JSON và giữ bài gốc nếu API lỗi.
+                    {reviewIsDemo
+                      ? " Kết quả này do bộ quy tắc cục bộ tạo ra nên có thể bỏ sót lỗi."
+                      : " Kết quả do AI tạo ra và đã được kiểm tra cấu trúc JSON; hãy đối chiếu với giáo viên khi cần độ chính xác cao."}{" "}
+                    Bài gốc luôn được giữ lại và không bị thay thế.
                   </p>
                 </div>
               </div>
@@ -550,8 +626,9 @@ export function WritingView() {
               <div>
                 <p className="text-[11px] font-bold text-navy">Quyền riêng tư</p>
                 <p className="mt-1 text-[10px] leading-4 text-[#4d6488]">
-                  Bản demo không gửi bài viết đi đâu. Khi bật Gemini thật, ứng dụng sẽ thông báo rõ bài viết và đề
-                  liên quan được gửi tới nhà cung cấp AI trước khi bạn bấm chấm.
+                  {aiConfigured
+                    ? `Khi bấm chấm, bài viết và đề liên quan được gửi tới Google Gemini (${aiModel}). Gemini free tier có thể dùng nội dung để cải thiện sản phẩm, nên đừng nhập thông tin cá nhân nhạy cảm. Kết quả được lưu cục bộ trên trình duyệt của bạn.`
+                    : "Chưa cấu hình Gemini nên bài viết không được gửi đi đâu. Bài được chấm bằng bộ quy tắc cục bộ trên máy chủ."}
                 </p>
               </div>
             </div>

@@ -1,14 +1,17 @@
 # Kế hoạch kỹ thuật — Language Web
 
-Ngày: 05/11/2026. Trạng thái: kế hoạch đề xuất; một **bản demo client-only** đã được
-triển khai trong repo (Next.js App Router, dữ liệu mẫu Lektion 1, tiến độ
-`localStorage`). Bản demo chưa có backend Gemini, IndexedDB, auth hay deployment.
+Ngày: 05/11/2026. Trạng thái: kế hoạch đề xuất; một **bản demo** đã được triển
+khai trong repo (Next.js App Router, dữ liệu mẫu Lektion 1, tiến độ `localStorage`).
+Writing đã có Route Handler gọi Gemini khi có `GEMINI_API_KEY`; chưa có IndexedDB,
+auth, đồng bộ cloud hay deployment.
 Nguồn yêu cầu: PRD Website Menschen A1 v0.1, 10 trang, ngày 03/11/2026.
 
 > Ghi chú hiện trạng: các mục dưới đây mô tả kiến trúc đích. Demo hiện tại giữ
-> đúng phạm vi nghiệp vụ (ba nhóm độc lập, ID ổn định, Writing local-demo) nhưng
-> đơn giản hóa tổ chức mã: nội dung trong `src/data/content.ts`, tiến độ trong
-> `src/lib/progress.tsx`. Khi thêm backend, thay các lớp này theo hợp đồng đã nêu.
+> đúng phạm vi nghiệp vụ (ba nhóm độc lập, ID ổn định, Writing có fallback local)
+> nhưng đơn giản hóa tổ chức mã: nội dung trong `src/data/content.ts`, tiến độ
+> trong `src/lib/progress.tsx`, adapter Gemini trong
+> `src/lib/writing-review-gemini.ts`. Khi mở rộng, thay các lớp này theo hợp đồng
+> đã nêu.
 
 ## 1. Quyết định đề xuất
 

@@ -12,4 +12,4 @@ coverage/
 *.tsbuildinfo
 next-env.d.ts
 
-.Ge-design/*
+Ge-design/

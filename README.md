@@ -1,8 +1,12 @@
 # Language-Web — Deutsch Lernen (Menschen A1)
 
-Website tự học tiếng Đức theo khung Menschen A1, giao diện tiếng Việt. Đây là bản
-**demo chạy hoàn toàn phía client**: toàn bộ nội dung Lektion 1 là dữ liệu mẫu,
-tiến độ được lưu trong `localStorage`, chưa có backend, tài khoản hay đồng bộ cloud.
+Website tự học tiếng Đức theo khung Menschen A1, giao diện tiếng Việt. Nội dung
+Lektion 1 là dữ liệu mẫu, tiến độ được lưu trong `localStorage`; chưa có tài khoản
+hay đồng bộ cloud.
+
+Phần **Writing** có thể gọi Gemini qua một Route Handler phía server để chấm bài.
+Nếu chưa cấu hình API key hoặc Gemini lỗi, ứng dụng tự động quay về bộ chấm cục bộ
+`local-demo-v1` và giữ nguyên bản nháp.
 
 - [Kế hoạch kỹ thuật và lộ trình MVP](docs/technical-plan.md)
 - PRD nguồn: `PRD Website Menschen A1.pdf` (tệp cục bộ, bị bỏ qua bởi `.gitignore`).
@@ -17,6 +21,7 @@ tiến độ được lưu trong `localStorage`, chưa có backend, tài khoản
 | Icon | lucide-react |
 | Lưu trữ | `localStorage` (React context) |
 | Âm thanh | Web Speech API, giọng `de-DE` |
+| AI Writing | Gemini 3.8 Flash (tùy chọn), gọi qua Route Handler |
 
 ## Chạy dự án
 
@@ -30,11 +35,35 @@ npm run dev        # http://localhost:3000
 Các lệnh khác:
 
 ```bash
-npm run build      # build production, 17 route tĩnh
+npm run build      # build production, 17 trang tĩnh + 1 API route động
 npm run start      # chạy bản build
 npm run lint       # ESLint (Next core-web-vitals + TypeScript)
 npm run typecheck  # tsc --noEmit
 ```
+
+### Cấu hình Gemini cho Writing
+
+Tạo `.env.local` từ mẫu:
+
+```bash
+cp .env.example .env.local
+```
+
+```bash
+# .env.local — chỉ dùng phía server, không đặt sau NEXT_PUBLIC_
+GEMINI_API_KEY=your-api-key
+GEMINI_MODEL=gemini-3.8-flash
+```
+
+Lấy API key tại [Google AI Studio](https://aistudio.google.com/api-keys). Không
+commit `.env.local`. Trên Vercel, thêm hai biến này tại **Settings → Environment
+Variables** rồi redeploy.
+
+- Không có `GEMINI_API_KEY`: Writing vẫn hoạt động với bộ chấm cục bộ.
+- `GEMINI_MODEL` không bắt buộc; mặc định là `gemini-3.8-flash`. Có thể đổi sang
+  `gemini-3.5-flash-lite` nếu cần nhanh/rẻ hơn.
+- API key chỉ được đọc trong Route Handler `src/app/api/writing/review/route.ts`;
+  không bao giờ gửi xuống trình duyệt.
 
 ## Màn hình và route
 
@@ -71,7 +100,9 @@ tuần tự. Lektion 2–4 hiển thị là "Sắp có" chứ không khóa theo 
 **Practice**
 - **Reading:** bài đọc A1 + câu hỏi đúng/sai và trắc nghiệm, chấm điểm.
 - **Listening:** nghe bằng Web Speech API, tốc độ chậm 0.7x, dictation và so khớp.
-- **Writing:** 2 đề viết, lưu nháp tự động, đếm từ, chấm bằng bộ đánh giá cục bộ.
+- **Writing:** 2 đề viết, lưu nháp tự động, đếm từ. Khi có `GEMINI_API_KEY`, bài
+  được gửi tới Gemini 3.8 Flash để chấm ngữ pháp, từ vựng, mức độ đáp ứng đề và
+  nhận xét bằng tiếng Việt; nếu lỗi hoặc chưa cấu hình, tự động dùng bộ chấm cục bộ.
 - **Speaking:** shadowing theo câu, thu âm demo bằng trình duyệt (nếu hỗ trợ), tự
   đánh giá theo checklist và đề nói A1. Không chấm phát âm bằng AI.
 
@@ -99,11 +130,16 @@ thị cảnh báo thay vì crash.
 
 ## Giới hạn hiện tại (quan trọng)
 
-- **Chưa có backend.** Không có đăng nhập, đồng bộ nhiều thiết bị hay API.
-- **Writing dùng bộ chấm cục bộ `local-demo-v1`.** Đây là đánh giá theo quy tắc
-  (độ dài, từ vựng, cấu trúc câu), **không phải Gemini** và không gửi văn bản đi
-  đâu. UI ghi rõ trạng thái demo. Khi có backend Gemini, thay qua lớp
-  `src/lib/writing-review.ts`.
+- **Chưa có tài khoản/đồng bộ cloud.** Tiến độ chỉ nằm trong `localStorage` của
+  từng trình duyệt; backend duy nhất hiện tại là Route Handler chấm Writing.
+- **Writing có hai chế độ.** Có `GEMINI_API_KEY` thì dùng Gemini; không có key,
+  hết quota hoặc API lỗi thì tự động dùng bộ chấm cục bộ `local-demo-v1` (quy tắc
+  độ dài, từ vựng, chia động từ, viết hoa danh từ). UI hiển thị rõ nguồn chấm.
+- **Gemini free tier có thể dùng nội dung để cải thiện sản phẩm.** Không nhập
+  thông tin cá nhân nhạy cảm vào bài viết. Nếu cần privacy cao hơn, dùng paid tier
+  của Gemini hoặc thay provider.
+- **Rate limit Writing là in-memory** (12 request/10 phút/IP). Phù hợp cho dự án
+  cá nhân; nếu mở công khai, thay bằng Redis/Upstash để giới hạn đáng tin cậy.
 - **Speaking không chấm AI.** Chỉ shadowing, thu âm demo và tự đánh giá.
 - **Audio là Web Speech API**, phụ thuộc giọng `de-DE` của trình duyệt/hệ điều
   hành; chưa có tệp audio thật.
@@ -115,6 +151,7 @@ thị cảnh báo thay vì crash.
 ```text
 src/
   app/                    # Route và màn hình (App Router)
+    api/writing/review/   # POST chấm Writing, GET trạng thái cấu hình
     arbeitsbuch/          # Thư viện + runner bài tập
     kursbuch/             # Từ vựng, ngữ pháp
     lektion/[lessonId]/   # Tổng quan bài học
@@ -122,14 +159,61 @@ src/
   components/             # App shell, UI dùng chung, providers
   data/content.ts         # Toàn bộ nội dung mẫu Lektion 1
   lib/                    # progress, settings, speech, grading, writing-review
+    writing-ai-config.ts  # đọc GEMINI_API_KEY / GEMINI_MODEL phía server
+    writing-review.ts     # bộ chấm cục bộ + type WritingReview
+    writing-review-gemini.ts # prompt, JSON schema, gọi Gemini
 ```
+
+## API chấm Writing
+
+`POST /api/writing/review`
+
+```json
+{
+  "promptId": "writing-1",
+  "text": "Ich heiße Minh Anh. Ich komme aus Vietnam."
+}
+```
+
+Phản hồi thành công:
+
+```json
+{
+  "review": {
+    "score": 8.5,
+    "summary": "…",
+    "criteria": [{ "id": "grammar", "label": "Ngữ pháp", "score": 8.5, "comment": "…" }],
+    "errors": [
+      {
+        "type": "grammar",
+        "excerpt": "Ich komme aus Vietnam",
+        "correction": "…",
+        "explanation": "…"
+      }
+    ],
+    "suggestedText": "…",
+    "model": "gemini-3.8-flash",
+    "provider": "gemini",
+    "isDemo": false
+  },
+  "provider": "gemini",
+  "fallback": false
+}
+```
+
+Khi Gemini lỗi hoặc chưa cấu hình, route trả HTTP 200 với `provider: "local"`,
+`fallback: true`, `reason` và `notice`; UI hiển thị thông báo tương ứng và vẫn lưu
+bài. Lỗi đầu vào trả 400/404; vượt rate limit trả 429 kèm `Retry-After`.
 
 ## Kiểm tra đã chạy
 
-- `npm run build`: 17 route tĩnh/SSG thành công.
+- `npm run build`: 17 trang tĩnh/SSG + API route động thành công.
 - `npx tsc --noEmit` và `npx eslint . --max-warnings=0`: sạch.
 - Playwright: 11 route desktop + 4 route mobile trả HTTP 200, không lỗi console,
   không tràn ngang.
 - 8 luồng tương tác: từ vựng, ngữ pháp, bài tập (5/5 + làm lại), đọc (4/4), nghe
   (100%), Writing (nháp + nhận xét + khôi phục sau reload), Speaking (tự đánh giá
   + đề nói), reset tiến độ.
+- Route Writing đã kiểm tra fallback khi chưa có key, validation 400/404 và cấu
+  hình qua `GET /api/writing/review`. Cần thêm key thật để kiểm thử end-to-end
+  với Gemini.
