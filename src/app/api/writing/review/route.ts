@@ -38,12 +38,28 @@ function takeRateLimit(key: string) {
 
 export async function GET() {
   const configured = isGeminiConfigured();
-  return NextResponse.json({
-    provider: configured ? "gemini" : "local",
-    configured,
-    model: configured ? getGeminiModel() : "local-demo-v1",
-    fallbackModel: configured ? getGeminiFallbackModel() : null,
-  });
+  const model = getGeminiModel();
+  const fallbackModel = getGeminiFallbackModel();
+
+  return NextResponse.json(
+    {
+      provider: configured ? "gemini" : "local",
+      configured,
+      model: configured ? model : "local-demo-v1",
+      fallbackModel: configured ? fallbackModel : null,
+      // Chỉ trả tên/trạng thái của các biến liên quan Writing, không trả giá trị secret.
+      env: {
+        GEMINI_API_KEY: configured ? "set" : "missing",
+        GEMINI_MODEL: model,
+        GEMINI_FALLBACK_MODEL: fallbackModel,
+        VERCEL_ENV: process.env.VERCEL_ENV ?? null,
+        VERCEL_REGION: process.env.VERCEL_REGION ?? null,
+        VERCEL_GIT_COMMIT_SHA: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? null,
+        VERCEL_GIT_COMMIT_REF: process.env.VERCEL_GIT_COMMIT_REF ?? null,
+      },
+    },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }
 
 export async function POST(request: Request) {
