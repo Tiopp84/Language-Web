@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { writingPrompts } from "@/data/content";
-import { isGeminiConfigured, getGeminiModel } from "@/lib/writing-ai-config";
+import { getGeminiFallbackModel, getGeminiModel, isGeminiConfigured } from "@/lib/writing-ai-config";
 import { runLocalWritingReview, type WritingReview } from "@/lib/writing-review";
 import { GeminiReviewError, reviewWritingWithGemini } from "@/lib/writing-review-gemini";
 
@@ -42,6 +42,7 @@ export async function GET() {
     provider: configured ? "gemini" : "local",
     configured,
     model: configured ? getGeminiModel() : "local-demo-v1",
+    fallbackModel: configured ? getGeminiFallbackModel() : null,
   });
 }
 
@@ -124,20 +125,36 @@ export async function POST(request: Request) {
     const review = await reviewWritingWithGemini(prompt, original);
     return NextResponse.json({ review, provider: "gemini", fallback: false });
   } catch (error) {
-    const code = error instanceof GeminiReviewError ? error.code : "api_error";
-    console.error("[writing-review] Gemini thất bại:", {
-      code,
-      message: error instanceof Error ? error.message : String(error),
-    });
+    const geminiError = error instanceof GeminiReviewError ? error : null;
+    const code = geminiError?.code ?? "api_error";
+    const message = error instanceof Error ? error.message : String(error);
+
+    console.error(
+      "[writing-review] gemini_failed",
+      JSON.stringify({
+        code,
+        message,
+        models: geminiError?.attempts.map((attempt) => attempt.model) ?? [],
+        attempts: geminiError?.attempts ?? [],
+      }),
+    );
 
     const review: WritingReview = runLocalWritingReview(prompt, original);
+    const notice =
+      code === "timeout"
+        ? "Gemini phản hồi quá lâu nên bài đã được chấm bằng bộ quy tắc cục bộ. Bản nháp của bạn vẫn được giữ."
+        : code === "unavailable"
+          ? "Gemini đang quá tải nên bài đã được chấm bằng bộ quy tắc cục bộ. Bản nháp của bạn vẫn được giữ; hãy thử lại sau."
+          : code === "rate_limited"
+            ? "Gemini đã hết quota miễn phí (khoảng 20 lượt/ngày với Gemini 3.8 Flash). Bài đã được chấm bằng bộ quy tắc cục bộ; hãy thử lại sau khi quota reset."
+            : "Gemini tạm thời không phản hồi. Bài đã được chấm bằng bộ quy tắc cục bộ và bản nháp của bạn vẫn được giữ.";
+
     return NextResponse.json({
       review,
       provider: "local",
       fallback: true,
       reason: code,
-      notice:
-        "Gemini tạm thời không phản hồi. Bài đã được chấm bằng bộ quy tắc cục bộ và bản nháp của bạn vẫn được giữ.",
+      notice,
     });
   }
 }

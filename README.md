@@ -53,15 +53,20 @@ cp .env.example .env.local
 # .env.local — chỉ dùng phía server, không đặt sau NEXT_PUBLIC_
 GEMINI_API_KEY=your-api-key
 GEMINI_MODEL=gemini-3.8-flash
+GEMINI_FALLBACK_MODEL=gemini-3.5-flash-lite
 ```
 
 Lấy API key tại [Google AI Studio](https://aistudio.google.com/api-keys). Không
-commit `.env.local`. Trên Vercel, thêm hai biến này tại **Settings → Environment
+commit `.env.local`. Trên Vercel, thêm các biến này tại **Settings → Environment
 Variables** rồi redeploy.
 
 - Không có `GEMINI_API_KEY`: Writing vẫn hoạt động với bộ chấm cục bộ.
 - `GEMINI_MODEL` không bắt buộc; mặc định là `gemini-3.8-flash`. Có thể đổi sang
   `gemini-3.5-flash-lite` nếu cần nhanh/rẻ hơn.
+- `GEMINI_FALLBACK_MODEL` không bắt buộc; mặc định là `gemini-3.5-flash-lite`.
+  Khi model chính trả 503/429 hoặc timeout, route thử model dự phòng một lần.
+- Toàn bộ lần chấm có budget **24 giây** (14 giây cho model chính, 10 giây cho
+  model dự phòng). Quá hạn sẽ tự động chấm cục bộ, tránh bị Vercel cắt ở 60 giây.
 - API key chỉ được đọc trong Route Handler `src/app/api/writing/review/route.ts`;
   không bao giờ gửi xuống trình duyệt.
 
@@ -134,7 +139,13 @@ thị cảnh báo thay vì crash.
   từng trình duyệt; backend duy nhất hiện tại là Route Handler chấm Writing.
 - **Writing có hai chế độ.** Có `GEMINI_API_KEY` thì dùng Gemini; không có key,
   hết quota hoặc API lỗi thì tự động dùng bộ chấm cục bộ `local-demo-v1` (quy tắc
-  độ dài, từ vựng, chia động từ, viết hoa danh từ). UI hiển thị rõ nguồn chấm.
+  độ dài, từ vựng, chia động từ, viết hoa danh từ). Model chính quá tải sẽ được
+  thử lại một lần bằng `GEMINI_FALLBACK_MODEL`; UI hiển thị rõ nguồn chấm.
+- **Gemini free tier có giới hạn rất thấp.** Với Gemini 3.8 Flash hiện tại:
+  khoảng **5 request/phút** và **20 request/ngày** cho mỗi project. Mỗi lần bấm
+  chấm là một request; retry cũng tính. Hết quota, route tự chuyển sang chấm cục
+  bộ và báo rõ trong UI. Muốn dùng thường xuyên nên bật billing hoặc dùng model
+  khác có quota cao hơn.
 - **Gemini free tier có thể dùng nội dung để cải thiện sản phẩm.** Không nhập
   thông tin cá nhân nhạy cảm vào bài viết. Nếu cần privacy cao hơn, dùng paid tier
   của Gemini hoặc thay provider.
@@ -202,8 +213,10 @@ Phản hồi thành công:
 ```
 
 Khi Gemini lỗi hoặc chưa cấu hình, route trả HTTP 200 với `provider: "local"`,
-`fallback: true`, `reason` và `notice`; UI hiển thị thông báo tương ứng và vẫn lưu
-bài. Lỗi đầu vào trả 400/404; vượt rate limit trả 429 kèm `Retry-After`.
+`fallback: true`, `reason` (`timeout`, `unavailable`, `rate_limited`, `api_error`,
+`invalid_response`, `not_configured`) và `notice`; UI hiển thị thông báo tương ứng
+và vẫn lưu bài. Route tự thử model dự phòng một lần và luôn trả trong khoảng 24
+giây. Lỗi đầu vào trả 400/404; vượt rate limit trả 429 kèm `Retry-After`.
 
 ## Kiểm tra đã chạy
 

@@ -627,7 +627,7 @@ export function WritingView({ aiConfigured, aiModel }: WritingViewProps) {
                 <p className="text-[11px] font-bold text-navy">Quyền riêng tư</p>
                 <p className="mt-1 text-[10px] leading-4 text-[#4d6488]">
                   {aiConfigured
-                    ? `Khi bấm chấm, bài viết và đề liên quan được gửi tới Google Gemini (${aiModel}). Gemini free tier có thể dùng nội dung để cải thiện sản phẩm, nên đừng nhập thông tin cá nhân nhạy cảm. Kết quả được lưu cục bộ trên trình duyệt của bạn.`
+                    ? `Khi bấm chấm, bài viết và đề liên quan được gửi tới Google Gemini (${aiModel}). Gemini free tier có thể dùng nội dung để cải thiện sản phẩm, nên đừng nhập thông tin cá nhân nhạy cảm. Free tier cũng giới hạn khoảng 5 lượt/phút và 20 lượt/ngày với Gemini 3.8 Flash. Kết quả được lưu cục bộ trên trình duyệt của bạn.`
                     : "Chưa cấu hình Gemini nên bài viết không được gửi đi đâu. Bài được chấm bằng bộ quy tắc cục bộ trên máy chủ."}
                 </p>
               </div>

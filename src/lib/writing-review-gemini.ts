@@ -2,7 +2,7 @@ import "server-only";
 
 import { GoogleGenAI } from "@google/genai";
 import type { WritingPrompt } from "@/data/content";
-import { getGeminiModel } from "@/lib/writing-ai-config";
+import { getGeminiFallbackModel, getGeminiModel } from "@/lib/writing-ai-config";
 import { clamp } from "@/lib/utils";
 import type {
   WritingCriterion,
@@ -23,10 +23,72 @@ const CRITERIA_LABELS: Record<CriterionId, string> = {
 
 const ERROR_TYPES: WritingErrorType[] = ["grammar", "vocabulary", "spelling", "task"];
 
+/**
+ * Toàn bộ request phải xong trong khoảng này. Vercel Hobby cắt function ở 60s,
+ * nên giữ budget đủ thấp để route còn kịp trả kết quả fallback cục bộ.
+ */
+const TOTAL_BUDGET_MS = 24_000;
+const MIN_ATTEMPT_BUDGET_MS = 3_000;
+
+export type GeminiFailureCode =
+  | "missing_key"
+  | "api_error"
+  | "invalid_response"
+  | "rate_limited"
+  | "timeout"
+  | "unavailable";
+
+export interface GeminiAttempt {
+  model: string;
+  durationMs: number;
+  outcome: "success" | "error";
+  code?: GeminiFailureCode;
+  status?: number;
+  message?: string;
+}
+
+function getErrorStatus(error: unknown) {
+  if (error && typeof error === "object" && "status" in error) {
+    const status = (error as { status?: unknown }).status;
+    if (typeof status === "number") return status;
+  }
+  return undefined;
+}
+
+function isTimeoutError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.name === "AbortError" ||
+    error.name === "TimeoutError" ||
+    error.name === "RequestTimeoutError"
+  );
+}
+
+function classifyError(error: unknown): GeminiFailureCode {
+  if (error instanceof GeminiReviewError) return error.code;
+  if (isTimeoutError(error)) return "timeout";
+
+  const status = getErrorStatus(error);
+  if (status === 429) return "rate_limited";
+  if (status === 503 || status === 502 || status === 504) return "unavailable";
+
+  const message = error instanceof Error ? error.message : "";
+  if (/high demand|overloaded|unavailable/i.test(message)) return "unavailable";
+  if (/timed out|timeout|aborted/i.test(message)) return "timeout";
+  return "api_error";
+}
+
+function isRetryable(code: GeminiFailureCode) {
+  // 429 là hết quota; thử model khác ngay sẽ đốt thêm quota mà chưa chắc qua.
+  // Chỉ retry khi lỗi tạm thời (quá tải, timeout) hoặc JSON hỏng.
+  return code === "timeout" || code === "unavailable" || code === "invalid_response";
+}
+
 export class GeminiReviewError extends Error {
   constructor(
     message: string,
-    readonly code: "missing_key" | "api_error" | "invalid_response",
+    readonly code: GeminiFailureCode,
+    readonly attempts: GeminiAttempt[] = [],
     options?: { cause?: unknown },
   ) {
     super(message, options);
@@ -234,16 +296,90 @@ function parseReview(raw: string, model: string): WritingReview {
   };
 }
 
+const PRIMARY_ATTEMPT_TIMEOUT_MS = 14_000;
+const FALLBACK_ATTEMPT_TIMEOUT_MS = 10_000;
+
 let cachedClient: { apiKey: string; client: GoogleGenAI } | null = null;
 
 function getClient(apiKey: string) {
   if (!cachedClient || cachedClient.apiKey !== apiKey) {
     cachedClient = {
       apiKey,
-      client: new GoogleGenAI({ apiKey, httpOptions: { timeout: 30_000 } }),
+      client: new GoogleGenAI({ apiKey, httpOptions: { timeout: 15_000 } }),
     };
   }
   return cachedClient.client;
+}
+
+function timeoutGuard(timeoutMs: number) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const promise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(
+        new GeminiReviewError(
+          `Gemini không phản hồi trong ${Math.round(timeoutMs / 1000)} giây.`,
+          "timeout",
+        ),
+      );
+    }, timeoutMs);
+  });
+  return {
+    promise,
+    clear: () => {
+      if (timer) clearTimeout(timer);
+    },
+  };
+}
+
+async function createReviewAttempt(
+  ai: GoogleGenAI,
+  model: string,
+  prompt: WritingPrompt,
+  original: string,
+  timeoutMs: number,
+) {
+  const controller = new AbortController();
+  const abortTimer = setTimeout(() => controller.abort(), timeoutMs);
+  const guard = timeoutGuard(timeoutMs);
+
+  try {
+    const interaction = await Promise.race([
+      ai.interactions.create(
+        {
+          model,
+          system_instruction: SYSTEM_INSTRUCTION,
+          input: buildUserPrompt(prompt, original),
+          response_format: {
+            type: "text",
+            mime_type: "application/json",
+            schema: REVIEW_SCHEMA,
+          },
+          generation_config: {
+            max_output_tokens: 2000,
+            thinking_level: "low",
+          },
+          // Không lưu nội dung bài viết trên hệ thống của nhà cung cấp.
+          store: false,
+        },
+        {
+          signal: controller.signal,
+          timeout_ms: timeoutMs,
+          // Tự retry ở tầng ứng dụng để kiểm soát tổng thời gian.
+          retries: { strategy: "none" },
+        },
+      ),
+      guard.promise,
+    ]);
+
+    const text = interaction.output_text;
+    if (!text) {
+      throw new GeminiReviewError("Gemini không trả về nội dung.", "invalid_response");
+    }
+    return parseReview(text, model);
+  } finally {
+    clearTimeout(abortTimer);
+    guard.clear();
+  }
 }
 
 export async function reviewWritingWithGemini(
@@ -255,41 +391,68 @@ export async function reviewWritingWithGemini(
     throw new GeminiReviewError("Chưa cấu hình GEMINI_API_KEY.", "missing_key");
   }
 
-  const model = getGeminiModel();
+  const primaryModel = getGeminiModel();
+  const fallbackModel = getGeminiFallbackModel();
+  const models = primaryModel === fallbackModel ? [primaryModel] : [primaryModel, fallbackModel];
+
   const ai = getClient(apiKey);
+  const deadline = Date.now() + TOTAL_BUDGET_MS;
+  const attempts: GeminiAttempt[] = [];
+  let lastFailure: { code: GeminiFailureCode; message: string } | null = null;
 
-  try {
-    const interaction = await ai.interactions.create(
-      {
-        model,
-        system_instruction: SYSTEM_INSTRUCTION,
-        input: buildUserPrompt(prompt, original),
-        response_format: {
-          type: "text",
-          mime_type: "application/json",
-          schema: REVIEW_SCHEMA,
-        },
-        generation_config: {
-          max_output_tokens: 3000,
-          thinking_level: "low",
-        },
-        // Không lưu nội dung bài viết trên hệ thống của nhà cung cấp.
-        store: false,
-      },
-      { timeout_ms: 30_000 },
-    );
-
-    const text = interaction.output_text;
-    if (!text) {
-      throw new GeminiReviewError("Gemini không trả về nội dung.", "invalid_response");
+  for (let index = 0; index < models.length; index += 1) {
+    const model = models[index];
+    const remaining = deadline - Date.now();
+    if (remaining < MIN_ATTEMPT_BUDGET_MS) {
+      lastFailure = {
+        code: "timeout",
+        message: "Không còn đủ thời gian để thử thêm model.",
+      };
+      break;
     }
-    return parseReview(text, model);
-  } catch (error) {
-    if (error instanceof GeminiReviewError) throw error;
-    throw new GeminiReviewError(
-      error instanceof Error ? error.message : "Không gọi được Gemini.",
-      "api_error",
-      { cause: error },
-    );
+
+    const preferredTimeout = index === 0 ? PRIMARY_ATTEMPT_TIMEOUT_MS : FALLBACK_ATTEMPT_TIMEOUT_MS;
+    const timeoutMs = Math.min(preferredTimeout, remaining);
+    const startedAt = Date.now();
+
+    try {
+      const review = await createReviewAttempt(ai, model, prompt, original, timeoutMs);
+      const durationMs = Date.now() - startedAt;
+      attempts.push({ model, durationMs, outcome: "success" });
+      console.info(
+        "[writing-review] gemini_attempt",
+        JSON.stringify({ model, durationMs, outcome: "success" }),
+      );
+      return review;
+    } catch (error) {
+      const durationMs = Date.now() - startedAt;
+      const code = classifyError(error);
+      const status = getErrorStatus(error);
+      const message = error instanceof Error ? error.message : String(error);
+
+      attempts.push({ model, durationMs, outcome: "error", code, status, message });
+      console.warn(
+        "[writing-review] gemini_attempt",
+        JSON.stringify({ model, durationMs, outcome: "error", code, status, message }),
+      );
+      lastFailure = { code, message };
+
+      const hasNextModel = index < models.length - 1;
+      if (!hasNextModel || !isRetryable(code)) break;
+
+      const nextRemaining = deadline - Date.now();
+      if (nextRemaining < MIN_ATTEMPT_BUDGET_MS) break;
+
+      console.info(
+        "[writing-review] gemini_retry",
+        JSON.stringify({ from: model, to: models[index + 1], reason: code }),
+      );
+    }
   }
+
+  throw new GeminiReviewError(
+    lastFailure?.message ?? "Không gọi được Gemini.",
+    lastFailure?.code ?? "api_error",
+    attempts,
+  );
 }
