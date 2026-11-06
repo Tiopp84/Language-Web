@@ -45,9 +45,10 @@ const errorTypeLabels = {
 interface WritingViewProps {
   aiConfigured: boolean;
   aiModel: string;
+  aiLabel: string;
 }
 
-export function WritingView({ aiConfigured, aiModel }: WritingViewProps) {
+export function WritingView({ aiConfigured, aiModel, aiLabel }: WritingViewProps) {
   const [type, setType] = useState<"sentence" | "paragraph">("sentence");
   const [text, setText] = useState("");
   const [review, setReview] = useState<WritingReview | null>(null);
@@ -154,7 +155,7 @@ export function WritingView({ aiConfigured, aiModel }: WritingViewProps) {
       saveWritingReview(currentPrompt.id, currentText, local, currentPrompt.title);
       const message =
         error instanceof Error && error.name === "AbortError"
-          ? "Gemini phản hồi quá lâu. Đã chấm bằng bộ quy tắc cục bộ; bài viết vẫn được giữ."
+          ? "AI phản hồi quá lâu. Đã chấm bằng bộ quy tắc cục bộ; bài viết vẫn được giữ."
           : "Không kết nối được máy chủ AI. Đã chấm bằng bộ quy tắc cục bộ; bài viết vẫn được giữ.";
       setReviewError(message);
       notify(message);
@@ -201,7 +202,7 @@ export function WritingView({ aiConfigured, aiModel }: WritingViewProps) {
           <Badge tone="soft">A1 · Lektion 1</Badge>
           <Badge tone={aiConfigured ? "success" : "warning"}>
             <Sparkles className="h-3 w-3" aria-hidden="true" />
-            {aiConfigured ? `Gemini · ${aiModel}` : "Chấm demo cục bộ"}
+            {aiConfigured ? `${aiLabel} · ${aiModel}` : "Chấm demo cục bộ"}
           </Badge>
         </div>
       </div>
@@ -338,8 +339,8 @@ export function WritingView({ aiConfigured, aiModel }: WritingViewProps) {
                 <p className="ml-auto inline-flex max-w-xs items-center gap-1.5 text-[10px] text-muted">
                   <Info className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                   {aiConfigured
-                    ? `Khi bấm chấm, bài viết và đề được gửi tới Google Gemini (${aiModel}).`
-                    : "Chưa cấu hình Gemini; bài được chấm bằng quy tắc cục bộ trên máy chủ."}
+                    ? `Khi bấm chấm, bài viết và đề được gửi tới ${aiLabel} (${aiModel}).`
+                    : "Chưa cấu hình AI; bài được chấm bằng quy tắc cục bộ trên máy chủ."}
                 </p>
               </div>
 
@@ -627,8 +628,8 @@ export function WritingView({ aiConfigured, aiModel }: WritingViewProps) {
                 <p className="text-[11px] font-bold text-navy">Quyền riêng tư</p>
                 <p className="mt-1 text-[10px] leading-4 text-[#4d6488]">
                   {aiConfigured
-                    ? `Khi bấm chấm, bài viết và đề liên quan được gửi tới Google Gemini (${aiModel}). Gemini free tier có thể dùng nội dung để cải thiện sản phẩm, nên đừng nhập thông tin cá nhân nhạy cảm. Free tier cũng giới hạn khoảng 5 lượt/phút và 20 lượt/ngày với Gemini 3.8 Flash. Kết quả được lưu cục bộ trên trình duyệt của bạn.`
-                    : "Chưa cấu hình Gemini nên bài viết không được gửi đi đâu. Bài được chấm bằng bộ quy tắc cục bộ trên máy chủ."}
+                    ? `Khi bấm chấm, bài viết và đề liên quan được gửi tới ${aiLabel} (${aiModel}). Nhà cung cấp AI có thể có chính sách lưu trữ và giới hạn lượt gọi riêng, nên đừng nhập thông tin cá nhân nhạy cảm. Kết quả được lưu cục bộ trên trình duyệt của bạn.`
+                    : "Chưa cấu hình AI nên bài viết không được gửi đi đâu. Bài được chấm bằng bộ quy tắc cục bộ trên máy chủ."}
                 </p>
               </div>
             </div>

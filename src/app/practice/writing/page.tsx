@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { getGeminiModel, isGeminiConfigured } from "@/lib/writing-ai-config";
+import { getWritingAiConfig } from "@/lib/writing-ai-config";
 import { WritingView } from "./writing-view";
 
 export const metadata: Metadata = {
@@ -7,11 +7,12 @@ export const metadata: Metadata = {
 };
 
 export default function WritingPage() {
-  const aiConfigured = isGeminiConfigured();
+  const config = getWritingAiConfig();
   return (
     <WritingView
-      aiConfigured={aiConfigured}
-      aiModel={aiConfigured ? getGeminiModel() : "local-demo-v1"}
+      aiConfigured={Boolean(config)}
+      aiModel={config?.model ?? "local-demo-v1"}
+      aiLabel={config?.label ?? "AI"}
     />
   );
 }

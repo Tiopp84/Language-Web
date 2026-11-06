@@ -189,7 +189,7 @@ export function ArbeitsbuchView() {
       {/* Filter toolbar */}
       <Card className="p-3.5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Filter className="h-4 w-4 text-muted" aria-hidden="true" />
             <label className="sr-only" htmlFor="topic-filter">
               Chủ điểm kiến thức
@@ -198,7 +198,7 @@ export function ArbeitsbuchView() {
               id="topic-filter"
               value={topic}
               onChange={(event) => setTopic(event.target.value)}
-              className="h-9 rounded-lg border border-line bg-white px-2.5 text-[11px] font-semibold text-navy focus:border-primary/40 focus:outline-none"
+              className="h-9 max-w-full min-w-0 rounded-lg border border-line bg-white px-2.5 text-[11px] font-semibold text-navy focus:border-primary/40 focus:outline-none"
             >
               <option value="all">Tất cả chủ điểm</option>
               {grammarTopics.map((item) => (
@@ -214,7 +214,7 @@ export function ArbeitsbuchView() {
               id="status-filter"
               value={status}
               onChange={(event) => setStatus(event.target.value as "all" | "done" | "new")}
-              className="h-9 rounded-lg border border-line bg-white px-2.5 text-[11px] font-semibold text-navy focus:border-primary/40 focus:outline-none"
+              className="h-9 max-w-full min-w-0 rounded-lg border border-line bg-white px-2.5 text-[11px] font-semibold text-navy focus:border-primary/40 focus:outline-none"
             >
               <option value="all">Tất cả trạng thái</option>
               <option value="done">Đã hoàn thành</option>

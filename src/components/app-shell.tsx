@@ -496,8 +496,9 @@ function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
           <div>
             <p className="text-[12px] font-bold text-navy">Writing trong bản này</p>
             <p className="mt-1 text-xs leading-5 text-muted">
-              Chưa kết nối backend Gemini. Nút “Chấm bằng AI” đang dùng bộ chấm quy tắc cục bộ để minh hoạ
-              luồng phản hồi; kết quả không phải đánh giá CEFR chính thức.
+              Writing có thể gọi nhà cung cấp AI qua cấu hình trong biến môi trường. Nếu chưa cấu hình
+              hoặc nhà cung cấp lỗi, nút “Chấm bằng AI” tự dùng bộ chấm quy tắc cục bộ; kết quả không
+              phải đánh giá CEFR chính thức.
             </p>
           </div>
         </div>

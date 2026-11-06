@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { writingPrompts } from "@/data/content";
-import { getGeminiFallbackModel, getGeminiModel, isGeminiConfigured } from "@/lib/writing-ai-config";
+import { getWritingAiConfig } from "@/lib/writing-ai-config";
 import { runLocalWritingReview, type WritingReview } from "@/lib/writing-review";
-import { GeminiReviewError, reviewWritingWithGemini } from "@/lib/writing-review-gemini";
+import { WritingAiError, reviewWritingWithAi } from "@/lib/writing-review-ai";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,22 +36,41 @@ function takeRateLimit(key: string) {
   return { allowed: true, retryAfter: 0 };
 }
 
+function hostOf(baseUrl: string) {
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return "unknown";
+  }
+}
+
 export async function GET() {
-  const configured = isGeminiConfigured();
-  const model = getGeminiModel();
-  const fallbackModel = getGeminiFallbackModel();
+  const config = getWritingAiConfig();
+  const configured = config !== null;
 
   return NextResponse.json(
     {
-      provider: configured ? "gemini" : "local",
+      provider: configured ? "ai" : "local",
       configured,
-      model: configured ? model : "local-demo-v1",
-      fallbackModel: configured ? fallbackModel : null,
-      // Chỉ trả tên/trạng thái của các biến liên quan Writing, không trả giá trị secret.
+      label: config?.label ?? null,
+      model: config?.model ?? "local-demo-v1",
+      fallbackModel: config?.fallbackModel ?? null,
+      baseUrlHost: config ? hostOf(config.baseUrl) : null,
+      source: config?.source ?? null,
+      jsonMode: config?.jsonMode ?? null,
+      // Chỉ trả trạng thái/tên biến, không trả giá trị secret.
       env: {
-        GEMINI_API_KEY: configured ? "set" : "missing",
-        GEMINI_MODEL: model,
-        GEMINI_FALLBACK_MODEL: fallbackModel,
+        WRITING_AI_BASE_URL: process.env.WRITING_AI_BASE_URL ? "set" : "missing",
+        WRITING_AI_API_KEY: process.env.WRITING_AI_API_KEY ? "set" : "missing",
+        WRITING_AI_MODEL: process.env.WRITING_AI_MODEL || null,
+        WRITING_AI_FALLBACK_MODEL: process.env.WRITING_AI_FALLBACK_MODEL || null,
+        WRITING_AI_LABEL: process.env.WRITING_AI_LABEL || null,
+        WRITING_AI_JSON_MODE: config?.jsonMode ?? null,
+        WRITING_AI_REASONING_EFFORT: config?.reasoningEffort ?? null,
+        GEMINI_API_KEY: process.env.GEMINI_API_KEY ? "set" : "missing",
+        GEMINI_MODEL: process.env.GEMINI_MODEL || null,
+        GROQ_API_KEY: process.env.GROQ_API_KEY ? "set" : "missing",
+        GROQ_MODEL: process.env.GROQ_MODEL || null,
         VERCEL_ENV: process.env.VERCEL_ENV ?? null,
         VERCEL_REGION: process.env.VERCEL_REGION ?? null,
         VERCEL_GIT_COMMIT_SHA: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? null,
@@ -125,7 +144,8 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!isGeminiConfigured()) {
+  const config = getWritingAiConfig();
+  if (!config) {
     const review: WritingReview = runLocalWritingReview(prompt, original);
     return NextResponse.json({
       review,
@@ -133,37 +153,47 @@ export async function POST(request: Request) {
       fallback: true,
       reason: "not_configured",
       notice:
-        "Chưa cấu hình GEMINI_API_KEY nên bài được chấm bằng bộ quy tắc cục bộ. Bài viết của bạn vẫn được giữ.",
+        "Chưa cấu hình AI cho Writing nên bài được chấm bằng bộ quy tắc cục bộ. Bài viết của bạn vẫn được giữ.",
     });
   }
 
   try {
-    const review = await reviewWritingWithGemini(prompt, original);
-    return NextResponse.json({ review, provider: "gemini", fallback: false });
+    const review = await reviewWritingWithAi(prompt, original);
+    return NextResponse.json({
+      review,
+      provider: "ai",
+      label: config.label,
+      fallback: false,
+    });
   } catch (error) {
-    const geminiError = error instanceof GeminiReviewError ? error : null;
-    const code = geminiError?.code ?? "api_error";
+    const aiError = error instanceof WritingAiError ? error : null;
+    const code = aiError?.code ?? "api_error";
     const message = error instanceof Error ? error.message : String(error);
+    const label = config.label;
 
     console.error(
-      "[writing-review] gemini_failed",
+      "[writing-review] ai_failed",
       JSON.stringify({
+        provider: label,
+        source: config.source,
         code,
         message,
-        models: geminiError?.attempts.map((attempt) => attempt.model) ?? [],
-        attempts: geminiError?.attempts ?? [],
+        models: aiError?.attempts.map((attempt) => attempt.model) ?? [],
+        attempts: aiError?.attempts ?? [],
       }),
     );
 
     const review: WritingReview = runLocalWritingReview(prompt, original);
     const notice =
       code === "timeout"
-        ? "Gemini phản hồi quá lâu nên bài đã được chấm bằng bộ quy tắc cục bộ. Bản nháp của bạn vẫn được giữ."
-        : code === "unavailable"
-          ? "Gemini đang quá tải nên bài đã được chấm bằng bộ quy tắc cục bộ. Bản nháp của bạn vẫn được giữ; hãy thử lại sau."
-          : code === "rate_limited"
-            ? "Gemini đã hết quota miễn phí (khoảng 20 lượt/ngày với Gemini 3.8 Flash). Bài đã được chấm bằng bộ quy tắc cục bộ; hãy thử lại sau khi quota reset."
-            : "Gemini tạm thời không phản hồi. Bài đã được chấm bằng bộ quy tắc cục bộ và bản nháp của bạn vẫn được giữ.";
+        ? `${label} phản hồi quá lâu nên bài đã được chấm bằng bộ quy tắc cục bộ. Bản nháp của bạn vẫn được giữ.`
+        : code === "network"
+          ? `Không kết nối được tới ${label} nên bài đã được chấm bằng bộ quy tắc cục bộ. Bản nháp của bạn vẫn được giữ; hãy thử lại sau.`
+          : code === "unavailable"
+            ? `${label} đang quá tải nên bài đã được chấm bằng bộ quy tắc cục bộ. Bản nháp của bạn vẫn được giữ; hãy thử lại sau.`
+            : code === "rate_limited"
+              ? `${label} đã hết quota hoặc bị giới hạn tần suất. Bài đã được chấm bằng bộ quy tắc cục bộ; hãy thử lại sau.`
+              : `${label} tạm thời không phản hồi. Bài đã được chấm bằng bộ quy tắc cục bộ và bản nháp của bạn vẫn được giữ.`;
 
     return NextResponse.json({
       review,

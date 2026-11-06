@@ -2,22 +2,22 @@
 
 Ngày: 05/11/2026. Trạng thái: kế hoạch đề xuất; một **bản demo** đã được triển
 khai trong repo (Next.js App Router, dữ liệu mẫu Lektion 1, tiến độ `localStorage`).
-Writing đã có Route Handler gọi Gemini khi có `GEMINI_API_KEY`; chưa có IndexedDB,
-auth, đồng bộ cloud hay deployment.
+Writing đã có Route Handler gọi API OpenAI-compatible (Groq, Gemini, OpenRouter…)
+khi có cấu hình `WRITING_AI_*`; chưa có IndexedDB, auth, đồng bộ cloud hay deployment.
 Nguồn yêu cầu: PRD Website Menschen A1 v0.1, 10 trang, ngày 03/11/2026.
 
 > Ghi chú hiện trạng: các mục dưới đây mô tả kiến trúc đích. Demo hiện tại giữ
 > đúng phạm vi nghiệp vụ (ba nhóm độc lập, ID ổn định, Writing có fallback local)
 > nhưng đơn giản hóa tổ chức mã: nội dung trong `src/data/content.ts`, tiến độ
-> trong `src/lib/progress.tsx`, adapter Gemini trong
-> `src/lib/writing-review-gemini.ts`. Khi mở rộng, thay các lớp này theo hợp đồng
+> trong `src/lib/progress.tsx`, adapter OpenAI-compatible trong
+> `src/lib/writing-review-ai.ts`. Khi mở rộng, thay các lớp này theo hợp đồng
 > đã nêu.
 
 ## 1. Quyết định đề xuất
 
-Xây một ứng dụng Next.js + TypeScript theo module, triển khai trên Vercel Hobby. Học liệu JSON được kiểm tra trước khi build; tiến độ và bài viết lưu IndexedDB. Backend ban đầu chỉ phục vụ Writing qua Gemini. Chưa cần Render, database cloud, CMS hay microservices.
+Xây một ứng dụng Next.js + TypeScript theo module, triển khai trên Vercel Hobby. Học liệu JSON được kiểm tra trước khi build; tiến độ và bài viết lưu IndexedDB. Backend ban đầu chỉ phục vụ Writing qua API OpenAI-compatible. Chưa cần Render, database cloud, CMS hay microservices.
 
-Mục tiêu chi phí hạ tầng ban đầu là 0 USD/tháng trong hạn mức miễn phí, dùng tên miền được nền tảng cấp. Đây là mục tiêu có điều kiện, không phải cam kết miễn phí vĩnh viễn. Gemini phải có model/free tier khả dụng cho tài khoản và khu vực của người dùng. Khi hết quota, giữ bản nháp và báo thử lại; không tự chuyển sang dịch vụ trả phí.
+Mục tiêu chi phí hạ tầng ban đầu là 0 USD/tháng trong hạn mức miễn phí, dùng tên miền được nền tảng cấp. Đây là mục tiêu có điều kiện, không phải cam kết miễn phí vĩnh viễn. Nhà cung cấp AI phải có model/free tier khả dụng cho tài khoản và khu vực của người dùng. Khi hết quota, giữ bản nháp và báo thử lại; không tự chuyển sang dịch vụ trả phí.
 
 “Dễ mở rộng” nghĩa là thêm bài học bằng dữ liệu, thay nơi lưu tiến độ hoặc nhà cung cấp AI qua một lớp tích hợp nhỏ. Không có kiến trúc đảm bảo tuyệt đối không phát sinh nợ kỹ thuật; kiểm soát bằng ranh giới module, kiểm thử nghiệp vụ và danh sách việc hoãn rõ ràng.
 
@@ -26,7 +26,7 @@ Mục tiêu chi phí hạ tầng ban đầu là 0 USD/tháng trong hạn mức m
 - Ba nhóm độc lập: Kursbuch, Arbeitsbuch, Practice 4 Skills. Không bắt học tuần tự.
 - Kursbuch: từ vựng, ngữ pháp; Arbeitsbuch: bài theo tham chiếu sách và bài tự tạo, phân biệt nguồn.
 - Bài tập: trắc nghiệm, đúng/sai, điền từ/chia động từ, sắp xếp câu; chấm bằng đáp án cấu hình.
-- Listening: dictation; Reading: văn bản và câu hỏi; Writing: đặt câu/đoạn văn với Gemini; Speaking: shadowing và đề tự luyện, không chấm AI.
+- Listening: dictation; Reading: văn bản và câu hỏi; Writing: đặt câu/đoạn văn với API OpenAI-compatible; Speaking: shadowing và đề tự luyện, không chấm AI.
 - Một Lektion mẫu hoàn chỉnh trước khi nhân rộng. Không tự giả định số Lektion hoặc phiên bản sách.
 - Dashboard, lưu tiến độ, reset có xác nhận, responsive và thao tác bàn phím nằm trong MVP.
 - Nội dung phải có nguồn/quyền; chưa được xuất bản thì không được lọt vào bundle hoặc thư mục public.
@@ -41,7 +41,7 @@ Auth, cloud sync, spaced repetition, CMS và ghi âm Speaking là phần mở r�
 | UI | React, CSS/Tailwind, component dùng chung vừa đủ | Bổ sung design system theo nhu cầu |
 | Học liệu | JSON trong repo, schema Zod, nội dung văn bản có cấu trúc | CMS/database cung cấp cùng hợp đồng dữ liệu |
 | Tiến độ | IndexedDB, adapter nhỏ bằng Dexie | Supabase Postgres + Auth + RLS, giữ local cache |
-| AI | Gemini qua API server, model cấu hình bằng biến môi trường | Thay adapter/model, thêm quota theo user |
+| AI | API OpenAI-compatible qua server (Groq/Gemini/OpenRouter…), Base URL + model cấu hình bằng biến môi trường | Thay base URL/model, thêm quota theo user |
 | Audio | Tệp tự tạo/có quyền; Web Speech API cho phát âm khi khả dụng | Object storage/CDN khi media tăng |
 | Kiểm thử | Vitest cho nghiệp vụ, Playwright cho hành trình chính | CI giữ cùng kiểm tra trên mỗi thay đổi |
 
@@ -66,7 +66,7 @@ src/
   content/                   # Schemas, truy vấn catalog, kiểm tra liên kết
   infrastructure/
     persistence/             # IndexedDB, migrations
-    ai/                      # Gemini adapter, server-only
+    ai/                      # OpenAI-compatible adapter, server-only
   config/                    # Config đã validate; tách server/public
   components/                # Thành phần UI thực sự dùng chung
 content/                     # JSON tự biên soạn hoặc được phép
@@ -75,7 +75,7 @@ scripts/                     # Validate nội dung và kiểm tra quyền xuất
 tests/                       # Kiểm thử nghiệp vụ và UAT
 ```
 
-UI gọi use case của feature; use case dùng hàm domain hoặc adapter. Domain không import React, Next.js, Gemini SDK hoặc IndexedDB. Không để component tự fetch Gemini hay tự ghi database.
+UI gọi use case của feature; use case dùng hàm domain hoặc adapter. Domain không import React, Next.js, SDK nhà cung cấp AI hoặc IndexedDB. Không để component tự fetch API AI hay tự ghi database.
 
 Chỉ cần ba hợp đồng ban đầu: `ContentRepository`, `ProgressRepository`, `WritingReviewer`. Không tạo một framework plugin, generic repository cho mọi thứ hoặc hệ thống dependency injection lớn. Một điểm khởi tạo nối adapter với use case là đủ.
 
@@ -110,9 +110,9 @@ LocalStorage chỉ dùng cho tùy chọn nhỏ như theme. Dữ liệu cục b�
 
 `POST /api/writing/review` nhận `promptId`, `contentVersion`, `text`, `requestId`; server tự tải đề và rubric tin cậy. Không nhận system prompt/model tùy ý từ client.
 
-Luồng: validate payload và kích thước → kiểm tra quyền gọi → kiểm tra quota → gọi Gemini với timeout → validate JSON phản hồi → trả DTO của ứng dụng. Điểm phải trong 0–10, nhận xét tiếng Việt, bản sửa tiếng Đức, lỗi và gợi ý diễn đạt phân biệt rõ. Trích đoạn lỗi phải đối chiếu được với bài gốc; JSON đúng schema chưa bảo đảm nhận xét đúng về ngôn ngữ.
+Luồng: validate payload và kích thước → kiểm tra quyền gọi → kiểm tra quota → gọi API OpenAI-compatible với timeout → validate JSON phản hồi → trả DTO của ứng dụng. Điểm phải trong 0–10, nhận xét tiếng Việt, bản sửa tiếng Đức, lỗi và gợi ý diễn đạt phân biệt rõ. Trích đoạn lỗi phải đối chiếu được với bài gốc; JSON đúng schema chưa bảo đảm nhận xét đúng về ngôn ngữ.
 
-Các biến cấu hình dự kiến: `GEMINI_API_KEY`, `GEMINI_MODEL`, `WRITING_ENABLED`, `WRITING_MAX_CHARS`, `WRITING_TIMEOUT_MS`, `WRITING_MAX_OUTPUT_TOKENS`, `OWNER_ACCESS_SECRET`, `SESSION_SIGNING_SECRET`. Secrets chỉ phía server, không có tiền tố public; `.env.example` chỉ chứa placeholder. Prompt được version-control riêng, không nhét trong component.
+Các biến cấu hình dự kiến: `WRITING_AI_BASE_URL`, `WRITING_AI_API_KEY`, `WRITING_AI_MODEL`, `WRITING_AI_FALLBACK_MODEL`, `WRITING_AI_JSON_MODE`, `WRITING_ENABLED`, `WRITING_MAX_CHARS`, `WRITING_TIMEOUT_MS`, `WRITING_MAX_OUTPUT_TOKENS`, `OWNER_ACCESS_SECRET`, `SESSION_SIGNING_SECRET`. Secrets chỉ phía server, không có tiền tố public; `.env.example` chỉ chứa placeholder. Prompt được version-control riêng, không nhét trong component.
 
 Điểm cần bổ sung so với PRD: server-side key chưa đủ để bảo vệ endpoint công khai. Bản cá nhân có cổng truy cập Writing bằng mật khẩu chủ sở hữu, đổi thành session ký với cookie HttpOnly/Secure/SameSite và thời hạn. Đây là bảo vệ thao tác AI, không phải hệ thống tài khoản học tập. Kiểm tra Origin/CSRF cho request thay đổi trạng thái và giới hạn thử mật khẩu. Không nhúng mật khẩu vào frontend.
 
@@ -136,10 +136,10 @@ Media được tham chiếu qua metadata/base URL, không rải domain storage t
 | 2. Kiến thức | Một bài Vocabulary + Grammar đầy đủ | UAT-02/03; lọc/tìm, metadata đúng từ loại, liên kết bài tập đúng |
 | 3. Bài tập và tiến độ | Hai nhóm Arbeitsbuch, đủ dạng bài, IndexedDB | UAT-04; đáp án thay thế, Unicode, reload, reset có xác nhận |
 | 4. Kỹ năng cố định | Listening, Reading, Speaking và audio hợp lệ | UAT-05/06/08; dictation thiếu/thừa; Speaking không chấm |
-| 5. Writing | Gemini thật, bảo vệ endpoint, bản nháp, phản hồi có cấu trúc | UAT-07; timeout/quota/JSON lỗi vẫn giữ bài; API key không ra client |
+| 5. Writing | AI thật qua API OpenAI-compatible, bảo vệ endpoint, bản nháp, phản hồi có cấu trúc | UAT-07; timeout/quota/JSON lỗi vẫn giữ bài; API key không ra client |
 | 6. Pilot cá nhân | Dashboard, responsive, backup đơn giản, deployment | Đủ UAT-01 đến UAT-10; học trọn một Lektion trên desktop/mobile |
 
-Chưa ấn định số tuần khi chưa biết quỹ thời gian và học liệu có sẵn. Mỗi mốc ra phần hoạt động thật; mock AI chỉ dùng trong test, không thay nghiệm thu tích hợp Gemini.
+Chưa ấn định số tuần khi chưa biết quỹ thời gian và học liệu có sẵn. Mỗi mốc ra phần hoạt động thật; mock AI chỉ dùng trong test, không thay nghiệm thu tích hợp nhà cung cấp AI thật.
 
 Kiểm thử tập trung vào lỗi có hậu quả: chấm sai tiếng Đức; dictation lệch từ; migration mất dữ liệu; khôi phục backup; truy cập API trái phép; đầu ra AI sai; publish nhầm nội dung chưa được phép. Playwright kiểm tra đi vào từng nhóm độc lập, làm bài, reload và giữ bản nháp khi API lỗi. CI tối thiểu: validate content, lint, typecheck, unit tests, build; smoke E2E cho thay đổi ảnh hưởng hành trình học.
 

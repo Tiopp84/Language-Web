@@ -17,7 +17,7 @@ export interface WritingCriterion {
   comment: string;
 }
 
-export type WritingReviewProvider = "gemini" | "local";
+export type WritingReviewProvider = "ai" | "local";
 
 export interface WritingReview {
   score: number;

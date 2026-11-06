@@ -4,9 +4,11 @@ Website tự học tiếng Đức theo khung Menschen A1, giao diện tiếng Vi
 Lektion 1 là dữ liệu mẫu, tiến độ được lưu trong `localStorage`; chưa có tài khoản
 hay đồng bộ cloud.
 
-Phần **Writing** có thể gọi Gemini qua một Route Handler phía server để chấm bài.
-Nếu chưa cấu hình API key hoặc Gemini lỗi, ứng dụng tự động quay về bộ chấm cục bộ
-`local-demo-v1` và giữ nguyên bản nháp.
+Phần **Writing** có thể gọi một API **OpenAI-compatible** qua Route Handler phía
+server để chấm bài. Cấu hình chỉ gồm Base URL + API key + model, nên đổi giữa
+Groq, Gemini, OpenRouter, Together, Ollama… không cần sửa code. Nếu chưa cấu hình
+hoặc nhà cung cấp lỗi, ứng dụng tự quay về bộ chấm cục bộ `local-demo-v1` và giữ
+nguyên bản nháp.
 
 - [Kế hoạch kỹ thuật và lộ trình MVP](docs/technical-plan.md)
 - PRD nguồn: `PRD Website Menschen A1.pdf` (tệp cục bộ, bị bỏ qua bởi `.gitignore`).
@@ -21,7 +23,7 @@ Nếu chưa cấu hình API key hoặc Gemini lỗi, ứng dụng tự động q
 | Icon | lucide-react |
 | Lưu trữ | `localStorage` (React context) |
 | Âm thanh | Web Speech API, giọng `de-DE` |
-| AI Writing | Gemini 3.8 Flash (tùy chọn), gọi qua Route Handler |
+| AI Writing | API OpenAI-compatible (Groq, Gemini, OpenRouter…), gọi qua Route Handler |
 
 ## Chạy dự án
 
@@ -41,7 +43,7 @@ npm run lint       # ESLint (Next core-web-vitals + TypeScript)
 npm run typecheck  # tsc --noEmit
 ```
 
-### Cấu hình Gemini cho Writing
+### Cấu hình AI cho Writing
 
 Tạo `.env.local` từ mẫu:
 
@@ -49,26 +51,54 @@ Tạo `.env.local` từ mẫu:
 cp .env.example .env.local
 ```
 
+Chỉ cần 3 biến bắt buộc:
+
 ```bash
 # .env.local — chỉ dùng phía server, không đặt sau NEXT_PUBLIC_
-GEMINI_API_KEY=your-api-key
-GEMINI_MODEL=gemini-3.8-flash
-GEMINI_FALLBACK_MODEL=gemini-3.5-flash-lite
+WRITING_AI_BASE_URL=https://api.groq.com/openai/v1
+WRITING_AI_API_KEY=your-api-key
+WRITING_AI_MODEL=openai/gpt-oss-120b
 ```
 
-Lấy API key tại [Google AI Studio](https://aistudio.google.com/api-keys). Không
-commit `.env.local`. Trên Vercel, thêm các biến này tại **Settings → Environment
-Variables** rồi redeploy.
+Tùy chọn:
 
-- Không có `GEMINI_API_KEY`: Writing vẫn hoạt động với bộ chấm cục bộ.
-- `GEMINI_MODEL` không bắt buộc; mặc định là `gemini-3.8-flash`. Có thể đổi sang
-  `gemini-3.5-flash-lite` nếu cần nhanh/rẻ hơn.
-- `GEMINI_FALLBACK_MODEL` không bắt buộc; mặc định là `gemini-3.5-flash-lite`.
-  Khi model chính trả 503/429 hoặc timeout, route thử model dự phòng một lần.
+```bash
+WRITING_AI_FALLBACK_MODEL=qwen/qwen3.8-27b
+WRITING_AI_LABEL=Groq
+WRITING_AI_JSON_MODE=json_schema   # hoặc json_object
+WRITING_AI_MAX_TOKENS=3000
+WRITING_AI_REASONING_EFFORT=low
+```
+
+Ví dụ đổi sang Gemini mà không sửa code:
+
+```bash
+WRITING_AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+WRITING_AI_API_KEY=your-gemini-key
+WRITING_AI_MODEL=gemini-3.8-flash
+WRITING_AI_FALLBACK_MODEL=gemini-3.5-flash-lite
+WRITING_AI_LABEL=Gemini
+```
+
+Hoặc ví dụ OpenRouter:
+
+```bash
+WRITING_AI_BASE_URL=https://openrouter.ai/api/v1
+WRITING_AI_API_KEY=your-openrouter-key
+WRITING_AI_MODEL=google/gemini-3.8-flash
+```
+
+- Không có cấu hình: Writing vẫn hoạt động với bộ chấm cục bộ.
+- Base URL có thể là `.../v1` hoặc URL đầy đủ `.../v1/chat/completions`; code tự
+  chuẩn hóa.
+- `WRITING_AI_FALLBACK_MODEL` được thử một lần khi model chính quá tải/timeout.
 - Toàn bộ lần chấm có budget **24 giây** (14 giây cho model chính, 10 giây cho
   model dự phòng). Quá hạn sẽ tự động chấm cục bộ, tránh bị Vercel cắt ở 60 giây.
-- API key chỉ được đọc trong Route Handler `src/app/api/writing/review/route.ts`;
-  không bao giờ gửi xuống trình duyệt.
+- `WRITING_AI_JSON_MODE=json_schema` dùng structured outputs; nếu nhà cung cấp
+  không hỗ trợ, đổi sang `json_object`. Kết quả vẫn được validate ở server.
+- Vẫn tương thích cấu hình cũ `GEMINI_*` và `GROQ_*` nếu chưa đặt `WRITING_AI_*`.
+- API key chỉ được đọc trong Route Handler; không bao giờ gửi xuống trình duyệt.
+- Trên Vercel, thêm biến tại **Settings → Environment Variables** rồi redeploy.
 
 ## Màn hình và route
 
@@ -105,9 +135,10 @@ tuần tự. Lektion 2–4 hiển thị là "Sắp có" chứ không khóa theo 
 **Practice**
 - **Reading:** bài đọc A1 + câu hỏi đúng/sai và trắc nghiệm, chấm điểm.
 - **Listening:** nghe bằng Web Speech API, tốc độ chậm 0.7x, dictation và so khớp.
-- **Writing:** 2 đề viết, lưu nháp tự động, đếm từ. Khi có `GEMINI_API_KEY`, bài
-  được gửi tới Gemini 3.8 Flash để chấm ngữ pháp, từ vựng, mức độ đáp ứng đề và
-  nhận xét bằng tiếng Việt; nếu lỗi hoặc chưa cấu hình, tự động dùng bộ chấm cục bộ.
+- **Writing:** 2 đề viết, lưu nháp tự động, đếm từ. Khi cấu hình
+  `WRITING_AI_*`, bài được gửi tới API OpenAI-compatible để chấm ngữ pháp, từ vựng,
+  mức độ đáp ứng đề và nhận xét bằng tiếng Việt; nếu lỗi hoặc chưa cấu hình, tự
+  động dùng bộ chấm cục bộ.
 - **Speaking:** shadowing theo câu, thu âm demo bằng trình duyệt (nếu hỗ trợ), tự
   đánh giá theo checklist và đề nói A1. Không chấm phát âm bằng AI.
 
@@ -137,18 +168,19 @@ thị cảnh báo thay vì crash.
 
 - **Chưa có tài khoản/đồng bộ cloud.** Tiến độ chỉ nằm trong `localStorage` của
   từng trình duyệt; backend duy nhất hiện tại là Route Handler chấm Writing.
-- **Writing có hai chế độ.** Có `GEMINI_API_KEY` thì dùng Gemini; không có key,
-  hết quota hoặc API lỗi thì tự động dùng bộ chấm cục bộ `local-demo-v1` (quy tắc
-  độ dài, từ vựng, chia động từ, viết hoa danh từ). Model chính quá tải sẽ được
-  thử lại một lần bằng `GEMINI_FALLBACK_MODEL`; UI hiển thị rõ nguồn chấm.
-- **Gemini free tier có giới hạn rất thấp.** Với Gemini 3.8 Flash hiện tại:
-  khoảng **5 request/phút** và **20 request/ngày** cho mỗi project. Mỗi lần bấm
-  chấm là một request; retry cũng tính. Hết quota, route tự chuyển sang chấm cục
-  bộ và báo rõ trong UI. Muốn dùng thường xuyên nên bật billing hoặc dùng model
-  khác có quota cao hơn.
-- **Gemini free tier có thể dùng nội dung để cải thiện sản phẩm.** Không nhập
-  thông tin cá nhân nhạy cảm vào bài viết. Nếu cần privacy cao hơn, dùng paid tier
-  của Gemini hoặc thay provider.
+- **Writing có hai chế độ.** Có `WRITING_AI_*` (hoặc `GEMINI_*`/`GROQ_*` cũ) thì
+  gọi API OpenAI-compatible; không có key, hết quota hoặc API lỗi thì tự động dùng
+  bộ chấm cục bộ `local-demo-v1` (quy tắc độ dài, từ vựng, chia động từ, viết hoa
+  danh từ). Model chính quá tải sẽ được thử lại một lần bằng model dự phòng; UI
+  hiển thị rõ nguồn chấm.
+- **Giới hạn free tier tùy nhà cung cấp.** Groq hiện thoáng hơn Gemini nhiều
+  (khoảng 30 request/phút, 1.000 request/ngày, nhưng chỉ 8K token/phút cho
+  `openai/gpt-oss-120b`). Gemini 3.8 Flash free tier khoảng 5 request/phút và 20
+  request/ngày. Mỗi lần bấm chấm là một request; retry cũng tính. Hết quota, route
+  tự chuyển sang chấm cục bộ và báo rõ trong UI.
+- **Chính sách dữ liệu tùy nhà cung cấp.** Groq mặc định không lưu inference và
+  không train trên dữ liệu khách hàng; Gemini free tier có thể dùng nội dung để
+  cải thiện sản phẩm. Không nhập thông tin cá nhân nhạy cảm vào bài viết.
 - **Rate limit Writing là in-memory** (12 request/10 phút/IP). Phù hợp cho dự án
   cá nhân; nếu mở công khai, thay bằng Redis/Upstash để giới hạn đáng tin cậy.
 - **Speaking không chấm AI.** Chỉ shadowing, thu âm demo và tự đánh giá.
@@ -170,9 +202,9 @@ src/
   components/             # App shell, UI dùng chung, providers
   data/content.ts         # Toàn bộ nội dung mẫu Lektion 1
   lib/                    # progress, settings, speech, grading, writing-review
-    writing-ai-config.ts  # đọc GEMINI_API_KEY / GEMINI_MODEL phía server
+    writing-ai-config.ts  # đọc WRITING_AI_* (và GEMINI_*/GROQ_* cũ) phía server
     writing-review.ts     # bộ chấm cục bộ + type WritingReview
-    writing-review-gemini.ts # prompt, JSON schema, gọi Gemini
+    writing-review-ai.ts  # prompt, JSON schema, adapter OpenAI-compatible
 ```
 
 ## API chấm Writing
@@ -203,30 +235,39 @@ Phản hồi thành công:
       }
     ],
     "suggestedText": "…",
-    "model": "gemini-3.8-flash",
-    "provider": "gemini",
+    "model": "openai/gpt-oss-120b",
+    "provider": "ai",
     "isDemo": false
   },
-  "provider": "gemini",
+  "provider": "ai",
+  "label": "Groq",
   "fallback": false
 }
 ```
 
-Khi Gemini lỗi hoặc chưa cấu hình, route trả HTTP 200 với `provider: "local"`,
-`fallback: true`, `reason` (`timeout`, `unavailable`, `rate_limited`, `api_error`,
-`invalid_response`, `not_configured`) và `notice`; UI hiển thị thông báo tương ứng
-và vẫn lưu bài. Route tự thử model dự phòng một lần và luôn trả trong khoảng 24
+Khi AI lỗi hoặc chưa cấu hình, route trả HTTP 200 với `provider: "local"`,
+`fallback: true`, `reason` (`timeout`, `network`, `unavailable`, `rate_limited`,
+`api_error`, `invalid_response`, `not_configured`) và `notice`; UI hiển thị thông báo tương ứng
+và vẫn lưu bài. Lỗi mạng được thử lại một lần trên cùng model, sau đó mới thử
+model dự phòng; cả hai đều lỗi thì chấm cục bộ. Route luôn trả trong khoảng 24
 giây. Lỗi đầu vào trả 400/404; vượt rate limit trả 429 kèm `Retry-After`.
+
+`GET /api/writing/review` trả cấu hình đang được deployment đọc: `provider`,
+`label`, `model`, `fallbackModel`, `baseUrlHost`, `source`, `jsonMode` và trạng
+thái các biến `WRITING_AI_*` / `GEMINI_*` / `GROQ_*` (chỉ `set`/`missing`, không
+trả giá trị secret). Dùng endpoint này sau mỗi lần redeploy để kiểm tra env.
 
 ## Kiểm tra đã chạy
 
 - `npm run build`: 17 trang tĩnh/SSG + API route động thành công.
 - `npx tsc --noEmit` và `npx eslint . --max-warnings=0`: sạch.
-- Playwright: 11 route desktop + 4 route mobile trả HTTP 200, không lỗi console,
+- Playwright: 10 route desktop + 10 route mobile trả HTTP 200, không lỗi console,
   không tràn ngang.
 - 8 luồng tương tác: từ vựng, ngữ pháp, bài tập (5/5 + làm lại), đọc (4/4), nghe
   (100%), Writing (nháp + nhận xét + khôi phục sau reload), Speaking (tự đánh giá
   + đề nói), reset tiến độ.
 - Route Writing đã kiểm tra fallback khi chưa có key, validation 400/404 và cấu
-  hình qua `GET /api/writing/review`. Cần thêm key thật để kiểm thử end-to-end
-  với Gemini.
+  hình qua `GET /api/writing/review`, gồm cả ánh xạ cấu hình cũ `GEMINI_*` và
+  `GROQ_*`. Adapter OpenAI-compatible đã kiểm thử bằng mock server (thành công,
+  429, 503, timeout model chính, cả hai model timeout ~24 giây, JSON lỗi); cần
+  key thật để kiểm thử end-to-end với Groq/Gemini.
